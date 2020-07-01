@@ -1,4 +1,5 @@
 import chalk from 'chalk'
+import minimatch from 'minimatch'
 import { spawnSync } from 'child_process'
 import { getConf } from '../getConf'
 import { readPkg } from '../read-pkg'
@@ -25,10 +26,34 @@ function getOldCommand(cwd: string, hookName: string): string | undefined {
 }
 
 // Husky >= 1.0.0
-function getCommand(cwd: string, hookName: string): string | undefined {
+function getCommands(cwd: string, hookName: string): string[] | undefined {
   const config = getConf(cwd)
 
-  return config && config.hooks && config.hooks[hookName]
+  const command = config && config.hooks && config.hooks[hookName]
+  if (!command) {
+    return undefined
+  }
+
+  // See if the command is declared as a runOnChange, i.e. `{ glob: command }` instead of just `command`
+  if (typeof command === 'object') {
+    let { output } = spawnSync(
+      'sh',
+      ['-c', 'git diff-tree -r --name-only --no-commit-id ORIG_HEAD HEAD'],
+      { cwd }
+    )
+
+    // `output` looks like a string[], but it's really a list of null | Buffer where Buffer is line separated
+    output = output.flatMap((s) => s && s.toString().split('\n'))
+
+    return Object.entries(command)
+      .filter(
+        ([glob]) =>
+          output.find((line) => line && minimatch(line, glob)) !== undefined
+      )
+      .map(([, command]) => command as string)
+  }
+
+  return [command]
 }
 
 function runCommand(
@@ -77,8 +102,10 @@ export default async function run(
   [, , hookName = '', HUSKY_GIT_PARAMS]: string[],
   { cwd = process.cwd() }: { cwd?: string } = {}
 ): Promise<number> {
+  // Probe for commands that would want `runOnChange` data
+
   const oldCommand = getOldCommand(cwd, hookName)
-  const command = getCommand(cwd, hookName)
+  const commands = getCommands(cwd, hookName)
 
   // Add HUSKY_GIT_PARAMS to env
   const env: Env = {}
@@ -87,8 +114,10 @@ export default async function run(
     env.HUSKY_GIT_PARAMS = HUSKY_GIT_PARAMS
   }
 
-  if (command) {
-    return runCommand(cwd, hookName, command, env)
+  if (commands) {
+    return commands
+      .map((command) => runCommand(cwd, hookName, command, env))
+      .reduce((acc, i) => (i === 0 ? acc : i), 0)
   }
 
   if (oldCommand) {

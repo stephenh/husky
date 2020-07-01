@@ -1,5 +1,6 @@
 .gitattributes
 .github
+.idea
 .eslintrc.js
 .huskyrc
 .prettierrc
