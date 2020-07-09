@@ -38,7 +38,7 @@ function getCommands(cwd: string, hookName: string): string[] | undefined {
   if (typeof command === 'object') {
     let { output } = spawnSync(
       'sh',
-      ['-c', 'git diff-tree -r --name-only --no-commit-id ORIG_HEAD HEAD'],
+      ['-c', 'git diff-tree -r --name-only --no-commit-id HEAD@{1} HEAD'],
       { cwd }
     )
 
